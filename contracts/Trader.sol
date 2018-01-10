@@ -41,6 +41,11 @@ contract Trader {
   address[] private players;
   mapping(address => uint) private balances;
 
+  address[] private playersDuringTrade;
+  mapping(address => uint) private playersDuringTradeBalances;
+
+  bool private onTrade;
+
   modifier isOwner() {
     bool found = false;
     for(uint i = 0; i < owners.length; i++){
@@ -90,6 +95,7 @@ contract Trader {
     }
     botAccount = _botAccount;
     ownerPercentGains = _ownerPercentGains;
+    onTrade = false;
   }
 
   function getBalance() isPlayer public constant returns(uint balance) {
@@ -108,6 +114,7 @@ contract Trader {
   function botWithdrawal() isBot public {
     uint amount = availableBalance;
     availableBalance = 0;
+    onTrade = true;
     msg.sender.transfer(amount);
   }
 
@@ -122,6 +129,20 @@ contract Trader {
     msg.sender.transfer(amount);
     totalBalance = SafeMath.sub(totalBalance, amount);
     availableBalance = SafeMath.sub(availableBalance, amount);
+  }
+
+  // This will add the deposits to the users that
+  // Deposited during the trade
+  function addOnTradeDeposits() private {
+    uint value;
+    for(uint i = playersDuringTrade.length; i > 0; i--) {
+      value = playersDuringTradeBalances[playersDuringTrade[i-1]];
+      balances[playersDuringTrade[i-1]] = SafeMath.add(balances[playersDuringTrade[i-1]], value);
+      delete playersDuringTradeBalances[playersDuringTrade[i-1]];
+      delete playersDuringTrade[i-1];
+      totalBalance = SafeMath.add(totalBalance, value);
+      availableBalance = SafeMath.add(availableBalance, value);
+    }
   }
 
   // When the total amount decreases, we all share in the losses
@@ -145,6 +166,18 @@ contract Trader {
     }
   }
 
+  function calculatePlayerWinnings(uint winnings, uint ownersBalance) private constant returns(uint playersWinnings) {
+    uint ownersWinnings = SafeMath.div(
+      SafeMath.mul(winnings,ownersBalance), 
+      totalBalance
+    );
+    uint playersWinningsBeforeCut = SafeMath.sub(winnings,ownersWinnings);
+    playersWinnings = SafeMath.div(
+      SafeMath.mul(playersWinningsBeforeCut, ownerPercentGains), 
+      100
+    );
+  }
+
   // When the total amount increases, the owners will take
   // ownerPercentGains % of the winnings for the round
   function totalAmountIncrease(uint amount) private {
@@ -153,51 +186,63 @@ contract Trader {
       ownersBalance = SafeMath.add(ownersBalance, balances[owners[i]]);
     }
     uint playersBalance = SafeMath.sub(totalBalance, ownersBalance);
-    TradeMadeMoney("I made money", amount, playersBalance);
-    uint winnings = amount - totalBalance;
-    TradeMadeMoney("I made money", winnings, playersBalance);
+    uint winnings = SafeMath.sub(amount,totalBalance);
+    uint playersWinnings = calculatePlayerWinnings(winnings, ownersBalance);
+    uint ownersWinnings = SafeMath.sub(winnings, playersWinnings);
 
-    throw;
-    // uint ownersWinnings = SafeMath.div(
-    //   SafeMath.mul(winnings,ownersBalance), 
-    //   totalBalance
-    // );
-    // uint playersWinningsBeforeCut = SafeMath.sub(winnings,ownersWinnings);
-    // uint playersWinnings = SafeMath.div(
-    //   SafeMath.mul(playersWinningsBeforeCut, ownerPercentGains), 
-    //   100
-    // );
-    // ownersWinnings = SafeMath.add(
-    //   SafeMath.sub(playersWinningsBeforeCut, playersWinnings), 
-    //   ownersWinnings
-    // );
-
-
+    uint newBalance;
+    uint oldBalance;
+    uint totalGiven = 0;
 
     for(i = 0; i < players.length; i++){
-      // balances[players[i]] = SafeMath.add(
-      //   balances[players[i]],
-      //   SafeMath.div(
-      //     SafeMath.mul(
-      //       playersWinnings,
-      //       balances[players[i]]
-      //     ), 
-      //     playersBalance
-      //   )
-      // );
+      oldBalance = balances[players[i]];
+      newBalance = SafeMath.add(
+        oldBalance,
+        SafeMath.div(
+          SafeMath.mul(
+            playersWinnings,
+            oldBalance
+          ), 
+          playersBalance
+        )
+      );
+      balances[players[i]] = newBalance;
+      totalGiven = SafeMath.add(totalGiven,newBalance);
     }    
 
     for(i = 0; i < owners.length; i++){
-      // balances[owners[i]] = SafeMath.add(
-      //   balances[owners[i]],
-      //   SafeMath.div(
-      //     SafeMath.mul(
-      //       ownersWinnings,
-      //       balances[owners[i]]
-      //     ), 
-      //     ownersBalance
-      //   )
-      // );
+      if(ownersBalance == 0) {
+        uint ratio = SafeMath.div(1000,owners.length);
+        newBalance = SafeMath.div(
+          SafeMath.mul(
+            ownersWinnings,
+            ratio
+          ),
+          1000
+        );
+      }else{
+        oldBalance = balances[owners[i]];
+        newBalance = SafeMath.add(
+          oldBalance,
+          SafeMath.div(
+            SafeMath.mul(
+              ownersWinnings,
+              oldBalance
+            ),
+            ownersBalance
+          )
+        );
+      }
+      balances[owners[i]] = newBalance;
+      totalGiven = SafeMath.add(totalGiven,newBalance);
+    }
+
+    // This just to fix rounding errors
+    uint leftover = SafeMath.sub(amount, totalGiven);
+    uint baseAmount = SafeMath.div(leftover,owners.length);
+    balances[owners[0]] = SafeMath.add(balances[owners[0]],leftover % owners.length);
+    for(i = 0; i < owners.length; i++){
+      balances[owners[i]] = SafeMath.add(balances[owners[i]],baseAmount);
     }
   }
 
@@ -207,13 +252,15 @@ contract Trader {
     // Check if total balance has shrunk
     if (msg.value <= totalBalance) {
       TradeLostMoney("I lost money", totalBalance, msg.value);
-      totalAmountDecrease(availableBalance);
-    } else {
+      totalAmountDecrease(msg.value);
+    }else {
       TradeMadeMoney("I made money", totalBalance, msg.value);
-      totalAmountIncrease(availableBalance);
+      totalAmountIncrease(msg.value);
     }
     availableBalance = msg.value;
     totalBalance = msg.value;
+    addOnTradeDeposits();
+    onTrade = false;
   }
 
   // Function where people deposit into the smart contract
@@ -231,8 +278,18 @@ contract Trader {
 
     // Need to figure out what happens if they
     // Deposit while the bot is in a trade
-    balances[msg.sender] = SafeMath.add(balance, msg.value);
-    totalBalance = SafeMath.add(totalBalance, msg.value);
-    availableBalance = SafeMath.add(availableBalance, msg.value);
+    if(onTrade){
+      // If they make multiple deposits
+      if(playersDuringTradeBalances[msg.sender] > 0){
+        playersDuringTradeBalances[msg.sender] = SafeMath.add(playersDuringTradeBalances[msg.sender],msg.value);
+      }else{
+        playersDuringTrade.push(msg.sender);
+        playersDuringTradeBalances[msg.sender] = msg.value;
+      }
+    }else{
+      balances[msg.sender] = SafeMath.add(balance, msg.value);
+      totalBalance = SafeMath.add(totalBalance, msg.value);
+      availableBalance = SafeMath.add(availableBalance, msg.value);
+    }
   }
 }

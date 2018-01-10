@@ -52,14 +52,32 @@ contract('Trader', async (accounts) => {
     assert.equal(callData.toNumber(),0);
   });
 
-  it("bot should be able to deposit all funds back", async () => {
+  it("bot should be able to deposit all funds back and winnings destributed correctly", async () => {
     trader = await Trader.deployed();
-    transactionData = await trader.botDeposit({from: accounts[0], value: value*2})
-    callData = await trader.getTotalBalance.call({from: accounts[0]});
 
-    assert.equal(callData.toNumber(),value*4);
+    let amountToDeposit = parseInt(value*2.1)
+
+    transactionData = await trader.botDeposit({from: accounts[0], value: amountToDeposit})
+
+    callData = await trader.getTotalBalance.call({from: accounts[0]});
+    assert.equal(callData.toNumber(),amountToDeposit);
+    
     callData = await trader.getAvailableBalance.call({from: accounts[0]});
-    assert.equal(callData.toNumber(),value*4);
+    assert.equal(callData.toNumber(),amountToDeposit);
+
+    let promises = [
+      trader.getBalance.call({from: accounts[3]}),
+      trader.getBalance.call({from: accounts[4]}),
+      trader.getBalance.call({from: accounts[0]}),
+      trader.getBalance.call({from: accounts[1]})
+    ]
+
+    let amounts = await Promise.all(promises)
+    
+    let total = amounts.reduce((c,amount) => c + amount.toNumber(), 0);
+
+    assert.equal(total, amountToDeposit);
+
   });
   
 });
