@@ -39,6 +39,7 @@ contract Trader {
   uint private ownerPercentGains;
 
   address[] private players;
+  mapping(address => bool) private playersMap;
   mapping(address => uint) private balances;
 
   address[] private playersDuringTrade;
@@ -59,16 +60,10 @@ contract Trader {
   }
 
   modifier isPlayer() {
-    bool found = false;
-    for(uint i = 0; i < owners.length; i++){
-      if(msg.sender == owners[i]){
-        found = true;
-        break;
-      }
-    }
+    bool found = playersMap[msg.sender];
     if(!found){
-      for(i = 0; i < players.length; i++){
-        if(msg.sender == players[i]){
+      for(uint i = 0; i < owners.length; i++){
+        if(msg.sender == owners[i]){
           found = true;
           break;
         }
@@ -121,9 +116,9 @@ contract Trader {
   // Function where the player withdraws from the contract
   // Should probably allow them to withdraw bits of their balances
   function playerWithdrawal() isPlayer public {
-    uint amount = balances[msg.sender];
-
     // Make sure not in a current trade
+    require(!onTrade);
+    uint amount = balances[msg.sender];
     require(availableBalance > amount);
     balances[msg.sender] = 0;
     msg.sender.transfer(amount);
@@ -274,7 +269,10 @@ contract Trader {
         balance = balances[msg.sender];
       }
     }
-    if(!found) players.push(msg.sender);
+    if(!found) {
+      players.push(msg.sender);
+      playersMap[msg.sender] = true;
+    }
 
     // Need to figure out what happens if they
     // Deposit while the bot is in a trade
