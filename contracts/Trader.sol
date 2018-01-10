@@ -35,8 +35,8 @@ contract Trader {
   uint private availableBalance;
 
   address[] private owners;
-  uint private ownerAmount;
   address private botAccount;
+  uint private ownerPercentGains;
 
   address[] private players;
   mapping(address => uint) private balances;
@@ -51,39 +51,92 @@ contract Trader {
     if(msg.sender == botAccount) _;
   }
 
-  function Trader(address[] _owners, address _trading_account) {
+  function Trader(address[] _owners, address _botAccount, uint _ownerPercentGains) {
+    require(_ownerPercentGains < 100);
     for(uint i = 0; i < _owners.length; i++){
       owners.push(_owners[i]);
       balances[_owners[i]] = 0;
     }
+    botAccount = _botAccount
+    ownerPercentGains = _ownerPercentGains
   }
 
   function getBalance() isPlayer public constant returns(uint balance) {
     return balances[msg.sender];
   }
 
+  // Function where the bot account withdraws the contract
+  function botWithdrawal() isBot public {
+    uint amount = availableBalance;
+    availableBalance = 0;
+    msg.sender.transfer(amount);
+  }
+
+  // Function where the player withdraws from the contract
+  function playerWithdrawal() isPlayer public {
+    uint amount = balances[msg.sender];
+    balances[msg.sender] = 0;
+    msg.sender.transfer(amount);
+  }
+
+  // When the total amount decreases, we all share in the losses
   function totalAmountDecrease(amount) private {
     uint totalGiven = 0;
     for(uint i = 0; i < owners.length; i++){
-      balances[owners[i]] = SafeMath.div(SafeMath.mul(balances[owners[i]], availableBalance), totalBalance)
-      totalGiven += balances[owners[i]];
+      balances[owners[i]] = SafeMath.div(SafeMath.mul(balances[owners[i]], amount), totalBalance)
+      totalGiven = SafeMath.add(totalGiven,balances[owners[i]]);
     }
     for(i = 0; i < players.length; i++){
-      balances[players[i]] = SafeMath.div(SafeMath.mul(balances[players[i]], availableBalance), totalBalance)
-      totalGiven += balances[players[i]];
+      balances[players[i]] = SafeMath.div(SafeMath.mul(balances[players[i]], amount), totalBalance)
+      totalGiven = SafeMath.add(totalGiven,balances[players[i]]);
     }
-    uint leftover = amount - totalGiven;
+
+    // This just to fix rounding errors
+    uint leftover = SafeMath.sub(amount, totalGiven);
     uint baseAmount = SafeMath.div(leftover,owners.length)
-    balances[owners[0]] += leftover % owners.length
+    balances[owners[0]] = SafeMath.add(balances[owners[0]],leftover % owners.length)
     for(uint i = 0; i < owners.length; i++){
-      balances[owners[i]] += baseAmount
+      balances[owners[i]] = SafeMath.add(balances[owners[i]],baseAmount)
     }
   }
 
+  // When the total amount increases, the owners will take
+  // ownerPercentGains % of the winnings for the round
   function totalAmountIncrease(amount) private {
-    
+    uint ownersBalance = 0;
+    for(uint i = 0; i < owners.length; i++){
+      ownersBalance = SafeMath.add(ownersBalance, balances[owners[i]]);
+    }
+    uint playersBalance = SafeMath.sub(totalBalance, ownersBalance);
+
+    uint winnings = SafeMath.sub(amount,totalBalance);
+    uint ownersWinnings = SafeMath.div(SafeMath.mul(winnings * ownersBalance), totalBalance);
+    uint playersWinningsBeforeCut = SafeMath.sub(winnings,ownersWinnings);
+    uint playersWinnings = SafeMath.div(SafeMath.mul(playersWinningsBeforeCut, ownerPercentGains), 100);
+    ownersWinnings = SafeMath.add(ownersWinnings, SafeMath.sub(playersWinningsBeforeCut, playersWinnings));
+
+    for(i = 0; i < players.length; i++){
+      balances[players[i]] = SafeMath.add(
+        balances[players[i]],
+        SafeMath.div(
+          SafeMath.mul(playersWinnings,balances[players[i]]), 
+          playersBalance
+        )
+      )
+    }    
+
+    for(i = 0; i < owners.length; i++){
+      balances[owners[i]] = SafeMath.add(
+        balances[owners[i]],
+        SafeMath.div(
+          SafeMath.mul(ownersWinnings,balances[owners[i]]), 
+          ownersBalance
+        )
+      )
+    }
   }
 
+  // What happends when the bot deposits money into the smart contract
   function botDeposit() isBot payable public {
     require(msg.value > 0);
     availableBalance = msg.value;
@@ -94,13 +147,6 @@ contract Trader {
       totalAmountIncrease(availableBalance)
     }
     totalBalance = availableBalance
-  }
-
-  // Function where the bot account deposits into the contract
-  function botWithdrawal() isBot public {
-    uint amount = availableBalance;
-    availableBalance = 0;
-    msg.sender.transfer(amount);
   }
 
   // Function where people deposit into the smart contract
