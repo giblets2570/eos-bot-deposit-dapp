@@ -72,11 +72,16 @@ contract Trader {
       balances[players[i]] = SafeMath.div(SafeMath.mul(balances[players[i]], availableBalance), totalBalance)
       totalGiven += balances[players[i]];
     }
-
+    uint leftover = amount - totalGiven;
+    uint baseAmount = SafeMath.div(leftover,owners.length)
+    balances[owners[0]] += leftover % owners.length
+    for(uint i = 0; i < owners.length; i++){
+      balances[owners[i]] += baseAmount
+    }
   }
 
   function totalAmountIncrease(amount) private {
-
+    
   }
 
   function botDeposit() isBot payable public {
