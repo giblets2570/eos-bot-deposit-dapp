@@ -37,7 +37,7 @@ contract Trader {
 
   address[] private owners;
   address private botAccount;
-  uint private ownerPercentGains;
+  uint private playerPercentGains;
 
   address[] private players;
   mapping(address => bool) private playersMap;
@@ -83,14 +83,17 @@ contract Trader {
   event TradeMadeMoney(string str, uint amountBefore, uint amountAfter);
   event TradeLostMoney(string str, uint amountBefore, uint amountAfter);
 
-  function Trader(address[] _owners, address _botAccount, uint _ownerPercentGains, uint _maxBalance) public {
-    require(_ownerPercentGains < 100);
+  function Trader(address[] _owners, address _botAccount, uint _playerPercentGains, uint _maxBalance) public {
+    require(_playerPercentGains < 100);
+    botAccount = _botAccount;
+    bool botIsOwner = false;
     for(uint i = 0; i < _owners.length; i++){
       owners.push(_owners[i]);
       balances[_owners[i]] = 0;
+      botIsOwner = botIsOwner || (_owners[i] == _botAccount);
     }
-    botAccount = _botAccount;
-    ownerPercentGains = _ownerPercentGains;
+    require(botIsOwner);
+    playerPercentGains = _playerPercentGains;
     maxBalance = _maxBalance;
     onTrade = false;
   }
@@ -111,7 +114,7 @@ contract Trader {
     return maxBalance;
   }
 
-  function updateMaxBalance(uint balance) isOwner public {
+  function setMaxBalance(uint balance) isOwner public {
     maxBalance = balance;
   }
 
@@ -172,19 +175,26 @@ contract Trader {
   }
 
   function calculatePlayerWinnings(uint winnings, uint ownersBalance) private constant returns(uint playersWinnings) {
-    uint ownersWinnings = SafeMath.div(
-      SafeMath.mul(winnings,ownersBalance), 
-      totalBalance
-    );
-    uint playersWinningsBeforeCut = SafeMath.sub(winnings,ownersWinnings);
-    playersWinnings = SafeMath.div(
-      SafeMath.mul(playersWinningsBeforeCut, ownerPercentGains), 
-      100
-    );
+    if(totalBalance > 0) {
+      uint ownersWinnings = SafeMath.div(
+        SafeMath.mul(winnings,ownersBalance), 
+        totalBalance
+      );
+      uint playersWinningsBeforeCut = SafeMath.sub(winnings,ownersWinnings);
+      playersWinnings = SafeMath.div(
+        SafeMath.mul(playersWinningsBeforeCut, playerPercentGains), 
+        100
+      );
+    }else{
+      playersWinnings = SafeMath.div(
+        SafeMath.mul(winnings, playerPercentGains), 
+        100
+      );
+    }
   }
 
   // When the total amount increases, the owners will take
-  // ownerPercentGains % of the winnings for the round
+  // (100 - playerPercentGains) % of the winnings for the round
   function totalAmountIncrease(uint amount) private {
     uint ownersBalance = 0;
     for(uint i = 0; i < owners.length; i++){
