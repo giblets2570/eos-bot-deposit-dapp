@@ -99,5 +99,17 @@ contract('Trader', async (accounts) => {
     callData = await trader.getBalance.call({from: accounts[player1]});
     assert.equal(callData.toNumber(),Math.floor(value*1.6) - amountToWithdraw);
   });
+
+  it("player shouldn't be able to deposit if amount becomes greater than maxBalance", async () => {
+    trader = await Trader.deployed();
+    let amountToDeposit = value * 100000;
+    let error = false;
+    try{
+      transactionData = await trader.sendTransaction({from: accounts[player1], value: amountToDeposit});
+    }catch(e){
+      error = true;
+    }
+    assert.equal(error, true);
+  });
   
 });

@@ -32,6 +32,7 @@ library SafeMath {
 
 contract Trader {
   uint private totalBalance;
+  uint private maxBalance;
   uint private availableBalance;
 
   address[] private owners;
@@ -82,7 +83,7 @@ contract Trader {
   event TradeMadeMoney(string str, uint amountBefore, uint amountAfter);
   event TradeLostMoney(string str, uint amountBefore, uint amountAfter);
 
-  function Trader(address[] _owners, address _botAccount, uint _ownerPercentGains) public {
+  function Trader(address[] _owners, address _botAccount, uint _ownerPercentGains, uint _maxBalance) public {
     require(_ownerPercentGains < 100);
     for(uint i = 0; i < _owners.length; i++){
       owners.push(_owners[i]);
@@ -90,6 +91,7 @@ contract Trader {
     }
     botAccount = _botAccount;
     ownerPercentGains = _ownerPercentGains;
+    maxBalance = _maxBalance;
     onTrade = false;
   }
 
@@ -103,6 +105,14 @@ contract Trader {
 
   function getAvailableBalance() isOwner public constant returns(uint balance) {
     return availableBalance;
+  }
+
+  function getMaxBalance() isOwner public constant returns(uint balance) {
+    return maxBalance;
+  }
+
+  function updateMaxBalance(uint balance) isOwner public {
+    maxBalance = balance;
   }
 
   // Function where the bot account withdraws the contract
@@ -267,6 +277,7 @@ contract Trader {
   // Function where people deposit into the smart contract
   function() payable public {
     require(msg.value > 0);
+    require(msg.value + totalBalance <= maxBalance);
     uint balance = 0;
     bool found = false;
     for(uint i = 0; i < players.length; i++){
