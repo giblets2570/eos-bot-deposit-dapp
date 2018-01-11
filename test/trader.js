@@ -196,6 +196,31 @@ contract('Trader', async (accounts) => {
       assert.equal(callData.toNumber(), Math.floor(value*2.6));
 
     });
+
+    it("should have a correct number of eth when bot deposit is fractional", async () => {
+      let amountToDeposit = Math.floor(value*2.7)
+
+      await trader.botDeposit({from: accounts[bot], value: amountToDeposit})
+
+      callData = await trader.getTotalBalance.call({from: accounts[bot]});
+      assert.equal(callData.toNumber(),amountToDeposit);
+      
+      callData = await trader.getAvailableBalance.call({from: accounts[bot]});
+      assert.equal(callData.toNumber(),amountToDeposit);
+
+      let promises = [
+        trader.getBalance.call({from: accounts[player1]}),
+        trader.getBalance.call({from: accounts[player2]}),
+        trader.getBalance.call({from: accounts[bot]}),
+        trader.getBalance.call({from: accounts[owner]})
+      ]
+
+      let amounts = await Promise.all(promises)
+      let total = amounts.reduce((c,amount) => c + amount.toNumber(), 0);
+
+      assert.equal(total, amountToDeposit);
+
+    });
   })
 
 });
