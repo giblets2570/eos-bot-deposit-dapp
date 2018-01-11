@@ -114,13 +114,17 @@ contract Trader {
   }
 
   // Function where the player withdraws from the contract
-  // Should probably allow them to withdraw bits of their balances
-  function playerWithdrawal() isPlayer public {
+  // If amount is 0 then withdraw full amount
+  function playerWithdrawal(uint amount) isPlayer public {
     // Make sure not in a current trade
     require(!onTrade);
-    uint amount = balances[msg.sender];
+    if(amount == 0){
+      amount = balances[msg.sender];
+    }else{
+      require(amount <= balances[msg.sender]);
+    }
     require(availableBalance > amount);
-    balances[msg.sender] = 0;
+    balances[msg.sender] = SafeMath.sub(balances[msg.sender], amount);
     msg.sender.transfer(amount);
     totalBalance = SafeMath.sub(totalBalance, amount);
     availableBalance = SafeMath.sub(availableBalance, amount);
@@ -154,11 +158,7 @@ contract Trader {
 
     // This just to fix rounding errors
     uint leftover = SafeMath.sub(amount, totalGiven);
-    uint baseAmount = SafeMath.div(leftover,owners.length);
-    balances[owners[0]] = SafeMath.add(balances[owners[0]],leftover % owners.length);
-    for(i = 0; i < owners.length; i++){
-      balances[owners[i]] = SafeMath.add(balances[owners[i]],baseAmount);
-    }
+    giveLeftovers(leftover);
   }
 
   function calculatePlayerWinnings(uint winnings, uint ownersBalance) private constant returns(uint playersWinnings) {
@@ -234,9 +234,15 @@ contract Trader {
 
     // This just to fix rounding errors
     uint leftover = SafeMath.sub(amount, totalGiven);
+    giveLeftovers(leftover);
+  }
+
+  function giveLeftovers(uint leftover) private {
     uint baseAmount = SafeMath.div(leftover,owners.length);
-    balances[owners[0]] = SafeMath.add(balances[owners[0]],leftover % owners.length);
-    for(i = 0; i < owners.length; i++){
+    // Give to random owner
+    uint randomNumber = uint(block.blockhash(block.number-1))%owners.length;
+    balances[owners[randomNumber]] = SafeMath.add(balances[owners[randomNumber]],leftover % owners.length);
+    for(uint i = 0; i < owners.length; i++){
       balances[owners[i]] = SafeMath.add(balances[owners[i]],baseAmount);
     }
   }
@@ -259,7 +265,7 @@ contract Trader {
   }
 
   // Function where people deposit into the smart contract
-  function() payable {
+  function() payable public {
     require(msg.value > 0);
     uint balance = 0;
     bool found = false;
