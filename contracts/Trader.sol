@@ -1,6 +1,5 @@
 pragma solidity ^0.4.18;
 
-
 library SafeMath {
   function mul(uint a, uint b) internal pure returns (uint) {
     if (a == 0) {
@@ -161,11 +160,17 @@ contract Trader {
   function totalAmountDecrease(uint amount) private {
     uint totalGiven = 0;
     for(uint i = 0; i < owners.length; i++){
-      balances[owners[i]] = SafeMath.div(SafeMath.mul(balances[owners[i]], amount), totalBalance);
+      balances[owners[i]] = SafeMath.div(
+        SafeMath.mul(balances[owners[i]], amount), 
+        totalBalance
+      );
       totalGiven = SafeMath.add(totalGiven,balances[owners[i]]);
     }
     for(i = 0; i < players.length; i++){
-      balances[players[i]] = SafeMath.div(SafeMath.mul(balances[players[i]], amount), totalBalance);
+      balances[players[i]] = SafeMath.div(
+        SafeMath.mul(balances[players[i]], amount), 
+        totalBalance
+      );
       totalGiven = SafeMath.add(totalGiven,balances[players[i]]);
     }
 
@@ -290,15 +295,19 @@ contract Trader {
     require(msg.value + totalBalance <= maxBalance);
     uint balance = 0;
     bool found = false;
-    for(uint i = 0; i < players.length; i++){
-      if(msg.sender == players[i]) {
+    for(uint i = 0; i < owners.length; i++){
+      if(msg.sender == owners[i]) {
         found = true;
         balance = balances[msg.sender];
       }
     }
     if(!found) {
-      players.push(msg.sender);
-      playersMap[msg.sender] = true;
+      if(playersMap[msg.sender]){
+        balance = balances[msg.sender];
+      }else{
+        players.push(msg.sender);
+        playersMap[msg.sender] = true;
+      }
     }
 
     // Need to figure out what happens if they

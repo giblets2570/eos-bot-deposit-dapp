@@ -131,23 +131,51 @@ contract('Trader', async (accounts) => {
     beforeEach(async () => {
       amountDeposited = 0;
 
-      await trader.sendTransaction({from: accounts[player1], value: value})
-      amountDeposited += value;
-      callData = await trader.getBalance.call({from: accounts[player1]});
-      assert.equal(callData.toNumber(),value);
-
-      await trader.sendTransaction({from: accounts[player2], value: value})
-      callData = await trader.getBalance.call({from: accounts[player2]});
-      amountDeposited += value;
-      assert.equal(callData.toNumber(),value);
+      let promises = [bot,owner,player1,player2].map(async (user) => {
+        await trader.sendTransaction({from: accounts[user], value: value})
+        amountDeposited += value;
+        callData = await trader.getBalance.call({from: accounts[user]});
+        assert.equal(callData.toNumber(),value);
+      })
 
       await trader.botWithdrawal({from: accounts[bot]})
     });
 
+    it("bot should be able to deposit all funds back and losses distributed evenly", async () => {
+
+      let amountToDeposit = Math.floor(value)
+
+      await trader.botDeposit({from: accounts[bot], value: amountToDeposit})
+
+      callData = await trader.getTotalBalance.call({from: accounts[bot]});
+      assert.equal(callData.toNumber(),amountToDeposit);
+      
+      callData = await trader.getAvailableBalance.call({from: accounts[bot]});
+      assert.equal(callData.toNumber(),amountToDeposit);
+
+      let promises = [
+        trader.getBalance.call({from: accounts[player1]}),
+        trader.getBalance.call({from: accounts[player2]}),
+        trader.getBalance.call({from: accounts[bot]}),
+        trader.getBalance.call({from: accounts[owner]})
+      ]
+
+      let amounts = await Promise.all(promises)
+      
+      assert.equal(amounts[0].toNumber(),Math.floor(value*0.2));
+      assert.equal(amounts[1].toNumber(),Math.floor(value*0.2));
+      assert.equal(amounts[2].toNumber(),Math.floor(value*0.3));
+      assert.equal(amounts[3].toNumber(),Math.floor(value*0.3));
+
+      let total = amounts.reduce((c,amount) => c + amount.toNumber(), 0);
+
+      assert.equal(total, amountToDeposit);
+
+    });
 
     it("bot should be able to deposit all funds back and winnings destributed correctly", async () => {
 
-      let amountToDeposit = Math.floor(value*4)
+      let amountToDeposit = Math.floor(value*8)
 
       await trader.botDeposit({from: accounts[bot], value: amountToDeposit})
 
@@ -168,8 +196,8 @@ contract('Trader', async (accounts) => {
       
       assert.equal(amounts[0].toNumber(),Math.floor(value*1.6));
       assert.equal(amounts[1].toNumber(),Math.floor(value*1.6));
-      assert.equal(amounts[2].toNumber(),Math.floor(value*0.4));
-      assert.equal(amounts[3].toNumber(),Math.floor(value*0.4));
+      assert.equal(amounts[2].toNumber(),Math.floor(value*2.4));
+      assert.equal(amounts[3].toNumber(),Math.floor(value*2.4));
 
       let total = amounts.reduce((c,amount) => c + amount.toNumber(), 0);
 
@@ -184,12 +212,14 @@ contract('Trader', async (accounts) => {
       // Balance should stay the same
       assert.equal(callData.toNumber(),value);
 
-      await trader.botDeposit({from: accounts[bot], value: value*4});
+      let amountToDeposit = Math.floor(value*8)
+      
+      await trader.botDeposit({from: accounts[bot], value: amountToDeposit});
 
       callData = await trader.getTotalBalance.call({from: accounts[bot]});
 
       // The amount the user added during the trade gets added
-      assert.equal(callData.toNumber(),value*5);
+      assert.equal(callData.toNumber(),amountToDeposit + value);
 
       // The user has the bot deposit plus their own trade
       callData = await trader.getBalance.call({from: accounts[player1]});
@@ -197,8 +227,36 @@ contract('Trader', async (accounts) => {
 
     });
 
+    it("should be able to make multiple deposits when onTrade", async () => {
+      await trader.sendTransaction({from: accounts[player1], value: value})
+      callData = await trader.getBalance.call({from: accounts[player1]});
+
+      // Balance should stay the same
+      assert.equal(callData.toNumber(),value);
+
+      await trader.sendTransaction({from: accounts[player1], value: value})
+      callData = await trader.getBalance.call({from: accounts[player1]});
+
+      // Balance should stay the same
+      assert.equal(callData.toNumber(),value);
+
+      let amountToDeposit = Math.floor(value*8)
+
+      await trader.botDeposit({from: accounts[bot], value: amountToDeposit});
+
+      callData = await trader.getTotalBalance.call({from: accounts[bot]});
+
+      // The amount the user added during the trade gets added
+      assert.equal(callData.toNumber(),amountToDeposit+2*value);
+
+      // The user has the bot deposit plus their own trade
+      callData = await trader.getBalance.call({from: accounts[player1]});
+      assert.equal(callData.toNumber(), Math.floor(value*3.6));
+
+    });
+
     it("should have a correct number of eth when bot deposit is fractional", async () => {
-      let amountToDeposit = Math.floor(value*2.7)
+      let amountToDeposit = Math.floor(value*4.7)
 
       await trader.botDeposit({from: accounts[bot], value: amountToDeposit})
 
