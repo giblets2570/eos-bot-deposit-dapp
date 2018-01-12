@@ -11,22 +11,11 @@ contract('Trader', async (accounts) => {
 
 
   describe('before any funds are added', async () => {
-    it("should be able to retrieve total if owner", async () => {
-      callData = await trader.getTotalBalance.call({from: accounts[bot]});
-      assert.equal(callData.toNumber(),0);
-    });
-
-    it("shouldn't be able to retrieve total if not owner", async () => {
-      let error = false
-      try{
-        callData = await trader.getTotalBalance.call({from: accounts[player1]});
-      }catch(e){
-        error = true;
-      }
-      assert.equal(error,true);
-    });
 
     it("should be able to send funds to contract", async () => {
+
+      await trader.addPlayer(accounts[player1],{from: accounts[bot]});
+      await trader.addPlayer(accounts[player2],{from: accounts[bot]});
 
       await trader.sendTransaction({from: accounts[player1], value: value})
       callData = await trader.getBalance.call({from: accounts[player1]});
@@ -36,8 +25,7 @@ contract('Trader', async (accounts) => {
       callData = await trader.getBalance.call({from: accounts[player2]});
       assert.equal(callData.toNumber(),value);
 
-      callData = await trader.getTotalBalance.call({from: accounts[bot]});
-      assert.equal(callData.toNumber(),value*2);
+      assert.equal(web3.eth.getBalance(trader.address).toNumber(),value*2);
     });
 
     it("player shouldn't be able to deposit if amount becomes greater than maxBalance", async () => {
@@ -82,6 +70,10 @@ contract('Trader', async (accounts) => {
   describe('after funds are added', async () => {
     let amountDeposited;
     beforeEach(async () => {
+
+      await trader.addPlayer(accounts[player1],{from: accounts[bot]});
+      await trader.addPlayer(accounts[player2],{from: accounts[bot]});
+
       amountDeposited = 0;
 
       await trader.sendTransaction({from: accounts[player1], value: value})
@@ -96,29 +88,18 @@ contract('Trader', async (accounts) => {
     });
     
 
-    it("bot should be able to withdraw all available funds", async () => {
+    it("bot should be able to withdraw all funds", async () => {
 
       await trader.botWithdrawal({from: accounts[bot]})
-      callData = await trader.getTotalBalance.call({from: accounts[bot]});
-      assert.equal(callData.toNumber(),amountDeposited);
-
-      callData = await trader.getAvailableBalance.call({from: accounts[bot]});
-      assert.equal(callData.toNumber(),0);
-
-      callData = await trader.getTotalBalance.call({from: accounts[bot]});
-      assert.equal(callData.toNumber(),amountDeposited);
+      assert.equal(web3.eth.getBalance(trader.address).toNumber(),0);
 
     });
 
     it("player should be able to withdraw their funds", async () => {
       let amountToWithdraw = Math.floor(value);
-      await trader.playerWithdrawal(amountToWithdraw,{from: accounts[player1]});
+      await trader.userWithdrawal(amountToWithdraw,{from: accounts[player1]});
 
-      callData = await trader.getTotalBalance.call({from: accounts[bot]});
-
-      assert.equal(callData.toNumber(),Math.floor(amountDeposited) - amountToWithdraw);
-      callData = await trader.getAvailableBalance.call({from: accounts[bot]});
-      assert.equal(callData.toNumber(),Math.floor(amountDeposited) - amountToWithdraw);
+      assert.equal(web3.eth.getBalance(trader.address).toNumber(),Math.floor(amountDeposited) - amountToWithdraw);
 
       callData = await trader.getBalance.call({from: accounts[player1]});
       assert.equal(callData.toNumber(),value - amountToWithdraw);
@@ -129,6 +110,10 @@ contract('Trader', async (accounts) => {
 
     let amountDeposited;
     beforeEach(async () => {
+
+      await trader.addPlayer(accounts[player1],{from: accounts[bot]});
+      await trader.addPlayer(accounts[player2],{from: accounts[bot]});
+
       amountDeposited = 0;
 
       let promises = [bot,owner,player1,player2].map(async (user) => {
@@ -137,6 +122,8 @@ contract('Trader', async (accounts) => {
         callData = await trader.getBalance.call({from: accounts[user]});
         assert.equal(callData.toNumber(),value);
       })
+
+      await Promise.all(promises);
 
       await trader.botWithdrawal({from: accounts[bot]})
     });
@@ -147,11 +134,7 @@ contract('Trader', async (accounts) => {
 
       await trader.botDeposit({from: accounts[bot], value: amountToDeposit})
 
-      callData = await trader.getTotalBalance.call({from: accounts[bot]});
-      assert.equal(callData.toNumber(),amountToDeposit);
-      
-      callData = await trader.getAvailableBalance.call({from: accounts[bot]});
-      assert.equal(callData.toNumber(),amountToDeposit);
+      assert.equal(web3.eth.getBalance(trader.address).toNumber(),amountToDeposit);
 
       let promises = [
         trader.getBalance.call({from: accounts[player1]}),
@@ -179,11 +162,7 @@ contract('Trader', async (accounts) => {
 
       await trader.botDeposit({from: accounts[bot], value: amountToDeposit})
 
-      callData = await trader.getTotalBalance.call({from: accounts[bot]});
-      assert.equal(callData.toNumber(),amountToDeposit);
-      
-      callData = await trader.getAvailableBalance.call({from: accounts[bot]});
-      assert.equal(callData.toNumber(),amountToDeposit);
+      assert.equal(web3.eth.getBalance(trader.address).toNumber(),amountToDeposit);
 
       let promises = [
         trader.getBalance.call({from: accounts[player1]}),
@@ -205,54 +184,14 @@ contract('Trader', async (accounts) => {
 
     });
 
-    it("should be able to deposit when onTrade", async () => {
-      await trader.sendTransaction({from: accounts[player1], value: value})
-      callData = await trader.getBalance.call({from: accounts[player1]});
-
-      // Balance should stay the same
-      assert.equal(callData.toNumber(),value);
-
-      let amountToDeposit = Math.floor(value*8)
-      
-      await trader.botDeposit({from: accounts[bot], value: amountToDeposit});
-
-      callData = await trader.getTotalBalance.call({from: accounts[bot]});
-
-      // The amount the user added during the trade gets added
-      assert.equal(callData.toNumber(),amountToDeposit + value);
-
-      // The user has the bot deposit plus their own trade
-      callData = await trader.getBalance.call({from: accounts[player1]});
-      assert.equal(callData.toNumber(), Math.floor(value*2.6));
-
-    });
-
-    it("should be able to make multiple deposits when onTrade", async () => {
-      await trader.sendTransaction({from: accounts[player1], value: value})
-      callData = await trader.getBalance.call({from: accounts[player1]});
-
-      // Balance should stay the same
-      assert.equal(callData.toNumber(),value);
-
-      await trader.sendTransaction({from: accounts[player1], value: value})
-      callData = await trader.getBalance.call({from: accounts[player1]});
-
-      // Balance should stay the same
-      assert.equal(callData.toNumber(),value);
-
-      let amountToDeposit = Math.floor(value*8)
-
-      await trader.botDeposit({from: accounts[bot], value: amountToDeposit});
-
-      callData = await trader.getTotalBalance.call({from: accounts[bot]});
-
-      // The amount the user added during the trade gets added
-      assert.equal(callData.toNumber(),amountToDeposit+2*value);
-
-      // The user has the bot deposit plus their own trade
-      callData = await trader.getBalance.call({from: accounts[player1]});
-      assert.equal(callData.toNumber(), Math.floor(value*3.6));
-
+    it("shouldn't be able to make deposits when onTrade", async () => {
+      let error = false;
+      try{
+        await trader.sendTransaction({from: accounts[player1], value: value})
+      }catch(e){
+        error = true;
+      }
+      assert.equal(error, true);
     });
 
     it("should have a correct number of eth when bot deposit is fractional", async () => {
@@ -260,11 +199,7 @@ contract('Trader', async (accounts) => {
 
       await trader.botDeposit({from: accounts[bot], value: amountToDeposit})
 
-      callData = await trader.getTotalBalance.call({from: accounts[bot]});
-      assert.equal(callData.toNumber(),amountToDeposit);
-      
-      callData = await trader.getAvailableBalance.call({from: accounts[bot]});
-      assert.equal(callData.toNumber(),amountToDeposit);
+      assert.equal(web3.eth.getBalance(trader.address).toNumber(),amountToDeposit);
 
       let promises = [
         trader.getBalance.call({from: accounts[player1]}),
